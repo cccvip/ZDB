@@ -3,12 +3,25 @@ package bitcask
 import (
 	"encoding/binary"
 	"hash/crc32"
+	"time"
 )
 
 const (
 	MetaSize   = 29
 	DeleteFlag = 1
 )
+
+func NewEntryWithData(key []byte, value []byte) *Entry {
+	e := &Entry{}
+	e.Key = key
+	e.Value = value
+	e.Meta = &Meta{
+		TimeStamp: uint64(time.Now().Unix()),
+		KeySize:   uint32(len(key)),
+		ValueSize: uint32(len(value)),
+	}
+	return e
+}
 
 // key value meta元数据
 type Entry struct {
@@ -35,16 +48,16 @@ type Meta struct {
 
 // 数据进行encode
 // 在计算机内部，小端序被广泛应用于现代性 CPU 内部存储数据；而在其他场景譬如网络传输和文件存储使用大端序。
-func (e *Entry) encode() []byte {
+func (e *Entry) Encode() []byte {
 	size := e.size()
 	buf := make([]byte, size)
-	//8
+	//size 8
 	binary.LittleEndian.PutUint64(buf[4:12], e.Meta.position)
-	//8
+	//size 8
 	binary.LittleEndian.PutUint64(buf[12:20], e.Meta.TimeStamp)
-	//4
+	//size 4
 	binary.LittleEndian.PutUint32(buf[20:24], e.Meta.KeySize)
-	//4
+	//size 4
 	binary.LittleEndian.PutUint32(buf[24:28], e.Meta.ValueSize)
 	buf[28] = e.Meta.Flag
 
@@ -59,8 +72,34 @@ func (e *Entry) encode() []byte {
 	return buf
 }
 
+// 解码元数据
+func (e *Entry) DecodeMeta(meta []byte) {
+	e.Meta.Crc = binary.LittleEndian.Uint32(meta[0:4])
+	e.Meta.position = binary.LittleEndian.Uint64(meta[4:12])
+	e.Meta.TimeStamp = binary.LittleEndian.Uint64(meta[12:20])
+	e.Meta.KeySize = binary.LittleEndian.Uint32(meta[20:24])
+	e.Meta.ValueSize = binary.LittleEndian.Uint32(meta[24:28])
+}
+
+// 解码消息体
+func (e *Entry) DecodePlayload(playload []byte) {
+	keyHighBound := int(e.Meta.KeySize)
+	valueHighBound := keyHighBound + int(e.Meta.ValueSize)
+	e.Key = playload[0:keyHighBound]
+	e.Value = playload[keyHighBound:valueHighBound]
+}
+
+// 获取一条消息的size
 func (e *Entry) size() int64 {
 
 	return int64(MetaSize + e.Meta.KeySize + e.Meta.ValueSize)
 
+}
+
+// 获得编码
+func (e *Entry) GetCrc(buf []byte) uint32 {
+	crc := crc32.ChecksumIEEE(buf[4:])
+	crc = crc32.Update(crc, crc32.IEEETable, e.Key)
+	crc = crc32.Update(crc, crc32.IEEETable, e.Value)
+	return crc
 }
