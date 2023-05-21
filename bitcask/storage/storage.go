@@ -4,7 +4,11 @@ import (
 	"ZDB/bitcask"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path"
+	"strconv"
+	"strings"
 )
 
 var (
@@ -41,10 +45,98 @@ type DataFiles struct {
 	//已经存储文件ID
 	oIds []int
 	//可写入文件阈值
-	segementsize int
+	segementsize int64
 	//活跃文件
 	active  *ActiveFile
 	oIdFile oldFiles
+}
+
+// 初始化
+func NewDataFileWithFiles(dir string, segmentSize int64) (dfs *DataFiles, err error) {
+	dfs = &DataFiles{
+		dir:          dir,
+		oIdFile:      newOldFiles(),
+		segementsize: segmentSize,
+	}
+
+	fids, err := getFids(dir)
+	if err != nil {
+		return nil, err
+	}
+	aFid := fids[len(fids)-1]
+	dfs.active, err = NewActiveFile(dir, aFid)
+	if err != nil {
+		return nil, err
+	}
+	if len(fids) == 1 {
+		return dfs, nil
+	}
+	oldFids := fids[:len(fids)-1]
+	for _, fid := range oldFids {
+		path := getFilePath(dir, fid)
+		reader, err := NewOldFile(path)
+		if err != nil {
+			return nil, err
+		}
+		dfs.oIdFile[fid] = reader
+	}
+
+	return dfs, nil
+}
+
+// 打开只读文件
+func NewOldFile(path string) (of *oldFile, err error) {
+	fd, err := os.OpenFile(path, os.O_RDONLY, os.ModePerm)
+	if err != nil {
+		return nil, err
+	}
+	of = &oldFile{fd: fd}
+	return of, nil
+}
+
+// NewDataFiles create a DataFiles Object with an empty dir
+func NewDataFiles(path string, segmentSize int64) (dfs *DataFiles, err error) {
+	err = os.Mkdir(path, os.ModePerm)
+	if err != nil {
+		return nil, err
+	}
+	af, err := NewActiveFile(path, 1)
+	if err != nil {
+		return nil, err
+	}
+	dfs = &DataFiles{
+		dir:          path,
+		oIds:         nil,
+		active:       af,
+		oIdFile:      map[int]*oldFile{},
+		segementsize: segmentSize,
+	}
+	return dfs, nil
+}
+
+// 读取path下所有文件描述符
+func getFids(dir string) (fids []int, err error) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		fileName := f.Name()
+		filePath := path.Base(fileName)
+		if path.Ext(filePath) == FileSuffix {
+			filePrefix := strings.TrimSuffix(filePath, FileSuffix)
+			fid, err := strconv.Atoi(filePrefix)
+			if err != nil {
+				return nil, err
+			}
+			fids = append(fids, fid)
+		}
+	}
+	return fids, nil
+}
+
+func (d *DataFiles) GetOldFile() []int {
+	return d.oIds
 }
 
 // 激活文件
@@ -57,7 +149,7 @@ type ActiveFile struct {
 	offset int64
 }
 
-func newActiveFile(dir string, fid int) (af *ActiveFile, err error) {
+func NewActiveFile(dir string, fid int) (af *ActiveFile, err error) {
 	path := getFilePath(dir, fid)
 	fd, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, os.ModePerm)
 	if err != nil {
@@ -114,4 +206,24 @@ func getFilePath(dir string, fid int) string {
 
 	return fmt.Sprintf("%s/%d%s", dir, fid, FileSuffix)
 
+}
+
+// 压缩
+func (dfs *DataFiles) rotate() error {
+	aFid := dfs.active.fid
+	path := getFilePath(dfs.dir, aFid)
+	fd, err := os.OpenFile(path, os.O_RDONLY, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	r := &oldFile{fd: fd}
+	dfs.oIdFile[dfs.active.fid] = r
+	dfs.oIds = append(dfs.oIds, aFid)
+
+	af, err := NewActiveFile(dfs.dir, aFid+1)
+	if err != nil {
+		return err
+	}
+	dfs.active = af
+	return nil
 }
