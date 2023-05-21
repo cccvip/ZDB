@@ -11,6 +11,16 @@ const (
 	DeleteFlag = 1
 )
 
+type Hint struct {
+	Offset int64
+	Fid    int
+}
+
+func NewEntry() *Entry {
+	e := &Entry{}
+	return e
+}
+
 func NewEntryWithData(key []byte, value []byte) *Entry {
 	e := &Entry{}
 	e.Key = key
@@ -49,7 +59,7 @@ type Meta struct {
 // 数据进行encode
 // 在计算机内部，小端序被广泛应用于现代性 CPU 内部存储数据；而在其他场景譬如网络传输和文件存储使用大端序。
 func (e *Entry) Encode() []byte {
-	size := e.size()
+	size := e.Size()
 	buf := make([]byte, size)
 	//size 8
 	binary.LittleEndian.PutUint64(buf[4:12], e.Meta.position)
@@ -90,7 +100,7 @@ func (e *Entry) DecodePlayload(playload []byte) {
 }
 
 // 获取一条消息的size
-func (e *Entry) size() int64 {
+func (e *Entry) Size() int64 {
 
 	return int64(MetaSize + e.Meta.KeySize + e.Meta.ValueSize)
 
