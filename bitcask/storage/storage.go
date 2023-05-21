@@ -139,6 +139,68 @@ func (d *DataFiles) GetOldFile() []int {
 	return d.oIds
 }
 
+func (d *DataFiles) GetOldFileFid(fid int) *oldFile {
+	return d.oIdFile[fid]
+}
+
+// 解析存储的消息块
+func (of *oldFile) ReadEntityWithOutLength(offset int64) (e *bitcask.Entry, err error) {
+	e = &bitcask.Entry{Meta: &bitcask.Meta{}}
+	buf := make([]byte, bitcask.MetaSize)
+	n, err := of.fd.ReadAt(buf, offset)
+	if err != nil {
+		return nil, err
+	}
+	if n < bitcask.MetaSize {
+		return nil, ReadMissDataErr
+	}
+	offset += bitcask.MetaSize
+	e.DecodeMeta(buf)
+	payloadSize := e.Meta.KeySize + e.Meta.ValueSize
+	buf = make([]byte, payloadSize)
+	n, err = of.fd.ReadAt(buf, offset)
+	if err != nil {
+		return nil, err
+	}
+	if n < int(payloadSize) {
+		return nil, ReadMissDataErr
+	}
+	e.DecodePlayload(buf)
+	return e, nil
+}
+
+func (d *DataFiles) WriterEntity(e *bitcask.Entry) (h *bitcask.Hint, err error) {
+	h, err = d.active.WriteEntity(e)
+	if err != nil {
+		return nil, err
+	}
+	if d.canRotate() {
+		err := d.rotate()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return h, nil
+}
+
+// 按照文件位置 读取内容
+func (dfs *DataFiles) ReadEntry(index *bitcask.DataPosition) (e *bitcask.Entry, err error) {
+	dataSize := bitcask.MetaSize + index.KeySize + index.ValueSize
+	if index.Fid == dfs.active.fid {
+		return dfs.active.ReadEntity(index.Offet, dataSize)
+	}
+	of, exist := dfs.oIdFile[index.Fid]
+	if !exist {
+		return nil, MissOldFileErr
+	}
+	return of.ReadEntity(index.Offet, dataSize)
+}
+
+// 判断是否当前空间足够存放,否则就重新开辟一块空间。====重新写一个文件
+func (dfs *DataFiles) canRotate() bool {
+	return dfs.active.offset > dfs.segementsize
+}
+
 // 激活文件
 type ActiveFile struct {
 	//文件描述符
@@ -167,8 +229,12 @@ func NewActiveFile(dir string, fid int) (af *ActiveFile, err error) {
 	return af, nil
 }
 
+func (of *oldFile) ReadEntity(off int64, length int) (e *bitcask.Entry, err error) {
+	return readEntry(of.fd, off, length)
+}
+
 // 写
-func (af *ActiveFile) writeEntity(e bitcask.Entry) (h *bitcask.Hint, err error) {
+func (af *ActiveFile) WriteEntity(e *bitcask.Entry) (h *bitcask.Hint, err error) {
 	buf := e.Encode()
 	n, err := af.fd.WriteAt(buf, af.offset)
 	if n < len(buf) {

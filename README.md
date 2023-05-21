@@ -86,9 +86,14 @@ func rotate(){
 
 不考虑任何所学的数据库,从我们的常识思考。为了保持高并发下的数据正确性，最简单的操作应该是加锁
 
+使用读写锁
+
+- 在读数据的时候,使用读锁
+- 在写数据的,使用写锁,不允许修改,允许读
 
 
 
+还有细节正在coding中,主要参考代码地址(https://github.com/elliotchenzichang/tiny-bitcask)[https://github.com/elliotchenzichang/tiny-bitcask]
 
 
 

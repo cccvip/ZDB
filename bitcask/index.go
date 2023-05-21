@@ -29,6 +29,16 @@ type KeyDir struct {
 	Index indexer
 }
 
+func NewKD() *KeyDir {
+	kd := &KeyDir{}
+	kd.Index = newIndexer()
+	return kd
+}
+
+func newIndexer() indexer {
+	return indexer{}
+}
+
 //Find
 func (k *KeyDir) Find(key string) *DataPosition {
 	return k.Index[key]
