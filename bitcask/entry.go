@@ -16,8 +16,9 @@ type Hint struct {
 	Fid    int
 }
 
+// 空数据
 func NewEntry() *Entry {
-	e := &Entry{}
+	e := &Entry{Meta: &Meta{}}
 	return e
 }
 
