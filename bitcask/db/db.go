@@ -110,7 +110,7 @@ func (db *DB) Set(key []byte, value []byte) error {
 	return nil
 }
 
-// Get gets value by using key
+// 通过key获取value
 func (db *DB) Get(key []byte) (value []byte, err error) {
 	db.rw.RLock()
 	defer db.rw.RUnlock()
@@ -125,7 +125,7 @@ func (db *DB) Get(key []byte) (value []byte, err error) {
 	return entry.Value, nil
 }
 
-// Delete delete a key
+// Delete 删除某个key
 func (db *DB) Delete(key []byte) error {
 	db.rw.Lock()
 	defer db.rw.Unlock()
@@ -143,3 +143,5 @@ func (db *DB) Delete(key []byte) error {
 	db.kd.Delete(keyStr)
 	return nil
 }
+
+//merge 操作

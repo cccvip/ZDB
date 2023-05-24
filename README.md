@@ -98,6 +98,14 @@ func rotate(){
 
 
 
+代码调试
+安装：
+
+```golang
+ go get -u github.com/go-delve/delve/cmd/dlv
+```
+
+
 
 
 Bitcask简洁、优雅的key/value存储引擎
