@@ -143,6 +143,22 @@ func (d *DataFiles) GetOldFileFid(fid int) *oldFile {
 	return d.oIdFile[fid]
 }
 
+// 把旧的文件整个删除
+func (dfs *DataFiles) RemoveFile(fid int) error {
+	of := dfs.oIdFile[fid]
+	err := of.fd.Close()
+	if err != nil {
+		return err
+	}
+	path := getFilePath(dfs.dir, fid)
+	err = os.Remove(path)
+	if err != nil {
+		return err
+	}
+	delete(dfs.oIdFile, fid)
+	return nil
+}
+
 // 解析存储的消息块
 func (of *oldFile) ReadEntityWithOutLength(offset int64) (e *bitcask.Entry, err error) {
 	e = &bitcask.Entry{Meta: &bitcask.Meta{}}

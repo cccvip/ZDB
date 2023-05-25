@@ -144,4 +144,48 @@ func (db *DB) Delete(key []byte) error {
 	return nil
 }
 
-//merge 操作
+// merge 操作
+func (db *DB) Merge() error {
+	db.rw.Lock()
+	defer db.rw.Unlock()
+	//获取所有的旧文件
+	fids := db.storage.GetOldFile()
+	if len(fids) < 2 {
+		return NoNeedToMergeErr
+	}
+	sort.Ints(fids)
+
+	for _, fid := range fids[:len(fids)-1] {
+		var off int64
+		reader := db.storage.GetOldFileFid(fid)
+		for {
+			entry, err := reader.ReadEntityWithOutLength(off)
+			if err == nil {
+				key := string(entry.Key)
+				off += entry.Size()
+				oldIndex := db.kd.Find(key)
+				if oldIndex == nil {
+					continue
+				}
+				if oldIndex.IsEqualPos(fid, off) {
+					h, err := db.storage.WriterEntity(entry)
+					if err != nil {
+						return err
+					}
+					db.kd.AddIndexByData(h, entry)
+				}
+			} else {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+		}
+		err := db.storage.RemoveFile(fid)
+		if err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
